@@ -12,19 +12,21 @@ import com.artifex.mupdflib.FilePicker;
 import com.artifex.mupdflib.MuPDFCore;
 import com.artifex.mupdflib.MuPDFPageAdapter;
 import com.artifex.mupdflib.MuPDFReaderView;
-import com.lx.framework.base.BaseActivity;
-import com.lx.framework.http.DownLoadManager;
-import com.lx.framework.http.download.ProgressCallBack;
-import com.lx.framework.permission.IPermission;
-import com.lx.framework.utils.FileUtils;
-import com.lx.framework.utils.KLog;
-import com.lx.framework.utils.RegexUtils;
-import com.lx.framework.utils.ToastUtils;
-import com.lx.framework.utils.Utils;
+import com.ved.framework.base.BaseActivity;
+import com.ved.framework.http.DownLoadManager;
+import com.ved.framework.http.download.ProgressCallBack;
+import com.ved.framework.permission.IPermission;
+import com.ved.framework.utils.FileUtils;
+import com.ved.framework.utils.KLog;
+import com.ved.framework.utils.RegexUtils;
+import com.ved.framework.utils.ToastUtils;
+import com.ved.framework.utils.Utils;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
-import cn.leapinfo.mupdf.BR;
 import cn.leapinfo.mupdf.R;
 import cn.leapinfo.mupdf.databinding.FragmentAttachPreviewBinding;
 import okhttp3.ResponseBody;
@@ -43,26 +45,33 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
     public static final String ATTACH_FILE_URL = "ATTACH_FILE_URL";
     public static final String ATTACH_FILE_NAME = "ATTACH_FILE_NAME";
     public static final String ATTACH_FILE_PATH = "ATTACH_FILE_PATH";
+    public static final String IS_ASSETS_FILE = "IS_ASSETS_FILE";
     public static final int IMAGE_FILE = 900;
     public static final int PDF_FILE = 800;
     private String destFileDir;
+    private boolean isAssetsFile;
+    private String tempAssetFilePath;
 
-    public static void startActivity(Context context,String attachFileUrl) {
-        startActivity(context,attachFileUrl,"");
+    public static void startActivity(Context context, String attachFileUrl) {
+        startActivity(context, attachFileUrl, "", false);
     }
 
-    public static void startActivity(Context context,String attachFileUrl, String attachFileName) {
+    public static void startActivity(Context context, String attachFileUrl, String attachFileName) {
+        startActivity(context, attachFileUrl, attachFileName, false);
+    }
+
+    public static void startAssetsActivity(Context context, String assetsFileName) {
+        startActivity(context, assetsFileName, assetsFileName, true);
+    }
+
+    public static void startActivity(Context context,String attachFileUrl, String attachFileName, boolean isAssets) {
         Bundle bundle = new Bundle();
         bundle.putString(ATTACH_FILE_URL, attachFileUrl);
         if (!TextUtils.isEmpty(attachFileName))bundle.putString(ATTACH_FILE_NAME, attachFileName);
+        bundle.putBoolean(IS_ASSETS_FILE, isAssets);
         Intent intent = new Intent(context,AttachPreviewActivity.class);
         intent.putExtras(bundle);
         context.startActivity(intent);
-    }
-
-    @Override
-    public int initVariableId() {
-        return BR.viewModel;
     }
 
     @Override
@@ -71,27 +80,30 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
         if (bundle != null) {
             attachFileUrl = bundle.getString(ATTACH_FILE_URL);
             attachFileName = bundle.getString(ATTACH_FILE_NAME);
+            isAssetsFile = bundle.getBoolean(IS_ASSETS_FILE, false);
         }
         attachFileType = isPdfFile(attachFileUrl) ? PDF_FILE : IMAGE_FILE;
 
-        viewModel.title.set(TextUtils.isEmpty(attachFileName) ? "文书附件预览" : attachFileName);
+        getViewModel().title.set(TextUtils.isEmpty(attachFileName) ? "文书附件预览" : attachFileName);
 
         if (attachFileType == IMAGE_FILE) {
-            viewModel.pinchImageView.set(true);
-            viewModel.rlPdfContainer.set(false);
+            getViewModel().pinchImageView.set(true);
+            getViewModel().rlPdfContainer.set(false);
 
-            viewModel.attachFileUrl.set(attachFileUrl);
+            getViewModel().attachFileUrl.set(attachFileUrl);
 
         } else if (attachFileType == PDF_FILE) {
-            viewModel.pinchImageView.set(false);
-            viewModel.rlPdfContainer.set(true);
+            getViewModel().pinchImageView.set(false);
+            getViewModel().rlPdfContainer.set(true);
         }
         destFileDir = Utils.getContext().getCacheDir().getPath()+File.separator+"document";
 
         requestPermission(new IPermission() {
             @Override
             public void onGranted() {
-                if (!RegexUtils.isURL(attachFileUrl)) {
+                if (isAssetsFile) {
+                    copyAssetsToTempAndOpen(attachFileUrl);
+                } else if (!RegexUtils.isURL(attachFileUrl)) {
                     updatePdfFile(attachFileUrl);
                 } else {
                     downLoadFile();
@@ -105,24 +117,65 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
         },Manifest.permission.READ_EXTERNAL_STORAGE,Manifest.permission.WRITE_EXTERNAL_STORAGE);
     }
 
+    private void copyAssetsToTempAndOpen(String assetsFileName) {
+        getViewModel().pbLoading.set(true);
+
+        try {
+            // 使用应用的缓存目录
+            File tempDir = getCacheDir();
+            if (!tempDir.exists()) {
+                tempDir.mkdirs();
+            }
+
+            // 创建临时文件
+            String tempFileName = "pdf_asset_" + System.currentTimeMillis() + "_" + assetsFileName;
+            File tempFile = new File(tempDir, tempFileName);
+
+            // 复制文件
+            InputStream is = getAssets().open(assetsFileName);
+            FileOutputStream fos = new FileOutputStream(tempFile);
+
+            byte[] buffer = new byte[8192];
+            int length;
+            while ((length = is.read(buffer)) > 0) {
+                fos.write(buffer, 0, length);
+            }
+
+            fos.close();
+            is.close();
+
+            // 记录临时文件路径，用于后续清理
+            tempAssetFilePath = tempFile.getAbsolutePath();
+
+            // 打开PDF
+            updatePdfFile(tempAssetFilePath);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            ToastUtils.showShort("打开PDF文件失败");
+            getViewModel().pbLoading.set(false);
+            finish();
+        }
+    }
+
     private void downLoadFile() {
         String destFileName = System.currentTimeMillis() + ".document";
         DownLoadManager.getInstance().load(attachFileUrl, new ProgressCallBack<ResponseBody>(destFileDir, destFileName) {
             @Override
             public void onStart() {
                 super.onStart();
-                viewModel.pbLoading.set(true);
+                getViewModel().pbLoading.set(true);
             }
 
             @Override
             public void onCompleted() {
-                viewModel.pbLoading.set(false);
+                getViewModel().pbLoading.set(false);
             }
 
             @Override
             public void onSuccess(ResponseBody responseBody) {
 //                ToastUtils.showShort("文件下载完成！");
-                viewModel.pbLoading.set(false);
+                getViewModel().pbLoading.set(false);
                 updatePdfFile(destFileDir+File.separator+destFileName);
             }
 
@@ -134,7 +187,7 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
             public void onError(Throwable e) {
                 e.printStackTrace();
                 ToastUtils.showShort("文件下载失败！");
-                viewModel.pbLoading.set(false);
+                getViewModel().pbLoading.set(false);
             }
         });
     }
@@ -159,14 +212,14 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
                 @Override
                 protected void onMoveToChild(int i) {
                     super.onMoveToChild(i);
-                    viewModel.pageNumber.set(String.format(" %s / %s ", i + 1, totalPageCount));
+                    getViewModel().pageNumber.set(String.format(" %s / %s ", i + 1, totalPageCount));
                 }
 
                 @Override
                 protected void onChildSetup(int i, View v) {
                     super.onChildSetup(i, v);
-                    viewModel.pbLoading.set(false);
-                    viewModel.tvPageNumber.set(true);
+                    getViewModel().pbLoading.set(false);
+                    getViewModel().tvPageNumber.set(true);
                 }
 
             };
@@ -177,7 +230,7 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
             binding.rlPdfContainer.addView(muPDFReaderView, new RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.MATCH_PARENT,
                     RelativeLayout.LayoutParams.MATCH_PARENT));
-            viewModel.pageNumber.set(String.format(" %s / %s ", 1, totalPageCount));
+            getViewModel().pageNumber.set(String.format(" %s / %s ", 1, totalPageCount));
         } else {
             KLog.e("获取文件失败");
         }
@@ -209,6 +262,13 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
     public void onDestroy() {
         super.onDestroy();
         FileUtils.deleteAllInDir(destFileDir);
+        if (tempAssetFilePath != null) {
+            File tempFile = new File(tempAssetFilePath);
+            if (tempFile.exists()) {
+                boolean deleted = tempFile.delete();
+                KLog.i("清理assets临时文件: " + (deleted ? "成功" : "失败"));
+            }
+        }
     }
 
     @Override

@@ -2,11 +2,11 @@ package com.artifex.mupdflib.ui;
 
 import android.app.Application;
 
-import com.lx.framework.base.BaseViewModel;
-import com.lx.framework.binding.command.BindingCommand;
-
 import androidx.annotation.NonNull;
 import androidx.databinding.ObservableField;
+
+import com.ved.framework.base.BaseViewModel;
+import com.ved.framework.binding.command.BindingCommand;
 
 public class AttachPreviewViewModel extends BaseViewModel {
     public ObservableField<Boolean> tvPageNumber = new ObservableField<>(false);

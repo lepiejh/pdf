@@ -5,7 +5,7 @@ import android.net.Uri;
 public abstract class FilePicker {
 	
 	public interface FilePickerSupport {
-		void performPickFor(FilePicker picker);
+        void performPickFor(FilePicker picker);
 	}
 
 	private final FilePickerSupport support;
