@@ -3,6 +3,7 @@ package com.artifex.mupdflib.ui;
 import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.View;
@@ -26,6 +27,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 import cn.leapinfo.mupdf.R;
 import cn.leapinfo.mupdf.databinding.FragmentAttachPreviewBinding;
@@ -98,23 +101,76 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
         }
         destFileDir = Utils.getContext().getCacheDir().getPath()+File.separator+"document";
 
+        if (Build.VERSION.SDK_INT >= 33) {
+            requestAndroid13Permissions();
+        } else {
+            requestLegacyPermissions();
+        }
+    }
+
+    private void requestAndroid13Permissions() {
+        // Android 13+ 不需要存储权限来访问应用自己的目录
+        // 但如果要读取其他应用的媒体文件，才需要这些权限
+        List<String> permissions = new ArrayList<>();
+
+        // 检查是否需要读取媒体文件（根据您的实际需求）
+        if (attachFileType == IMAGE_FILE) {
+            // 如果是图片，可能需要读取媒体权限
+            permissions.add("android.permission.READ_MEDIA_IMAGES");
+        }
+
+        if (permissions.isEmpty()) {
+            // 不需要权限，直接执行
+            proceedWithoutPermission();
+        } else {
+            // 请求必要的权限
+            requestPermission(new IPermission() {
+                @Override
+                public void onGranted() {
+                    proceedWithoutPermission();
+                }
+
+                @Override
+                public void onDenied(boolean denied) {
+                    // 即使拒绝权限，仍然可以继续（因为我们可以使用应用专属目录）
+                    KLog.i("部分功能可能受限，但PDF预览仍可进行");
+                    proceedWithoutPermission();
+                }
+            }, permissions.toArray(new String[0]));
+        }
+    }
+
+    // Android 12及以下版本权限请求
+    private void requestLegacyPermissions() {
         requestPermission(new IPermission() {
             @Override
             public void onGranted() {
-                if (isAssetsFile) {
-                    copyAssetsToTempAndOpen(attachFileUrl);
-                } else if (!RegexUtils.isURL(attachFileUrl)) {
-                    updatePdfFile(attachFileUrl);
-                } else {
-                    downLoadFile();
-                }
+                proceedWithoutPermission();
             }
 
             @Override
             public void onDenied(boolean denied) {
-                ToastUtils.showLong("请授权读写存储卡的权限,才能完成附件预览");
+                ToastUtils.showLong("请授权读写存储卡的权限，才能完成附件预览");
+                finish();
             }
-        },Manifest.permission.READ_EXTERNAL_STORAGE,Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+    }
+
+    private void proceedWithoutPermission() {
+        if (isAssetsFile) {
+            copyAssetsToTempAndOpen(attachFileUrl);
+        } else if (!RegexUtils.isURL(attachFileUrl)) {
+            // 本地文件路径
+            File file = new File(attachFileUrl);
+            if (file.exists()) {
+                updatePdfFile(attachFileUrl);
+            } else {
+                ToastUtils.showShort("文件不存在");
+                finish();
+            }
+        } else {
+            downLoadFile();
+        }
     }
 
     private void copyAssetsToTempAndOpen(String assetsFileName) {
