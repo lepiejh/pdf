@@ -55,18 +55,6 @@ public class AttachPreviewActivity extends BaseActivity<FragmentAttachPreviewBin
     private boolean isAssetsFile;
     private String tempAssetFilePath;
 
-    public static void startActivity(Context context, String attachFileUrl) {
-        startActivity(context, attachFileUrl, "", false);
-    }
-
-    public static void startActivity(Context context, String attachFileUrl, String attachFileName) {
-        startActivity(context, attachFileUrl, attachFileName, false);
-    }
-
-    public static void startAssetsActivity(Context context, String assetsFileName) {
-        startActivity(context, assetsFileName, assetsFileName, true);
-    }
-
     public static void startActivity(Context context,String attachFileUrl, String attachFileName, boolean isAssets) {
         Bundle bundle = new Bundle();
         bundle.putString(ATTACH_FILE_URL, attachFileUrl);
