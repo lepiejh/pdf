@@ -5,7 +5,6 @@ import android.view.View;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.artifex.mupdflib.ui.AttachPreviewActivity;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -22,10 +21,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void openfile(View view) {
-        AttachPreviewActivity.startActivity(
-                this,
-                "",
-                "说明书",true
-        );
+
     }
 }
